@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections;
 
 [RequireComponent(typeof(CharacterController))]
-public class ThirdPersonController : MonoBehaviour
+public class ThirdPersonController2 : MonoBehaviour
 {
     [Header("References")]
     public Transform cameraPivot;
@@ -74,8 +74,6 @@ public class ThirdPersonController : MonoBehaviour
     public bool IsJumping { get; private set; }
     public bool IsFalling { get; private set; }
     public bool IsBurrowing { get; private set; }
-
-    private Vector3 airVelocity; // horizontal momentum in air
 
     private void Awake()
     {
@@ -199,15 +197,12 @@ public class ThirdPersonController : MonoBehaviour
         {
             coyoteCounter = coyoteTime;
             airJumpCount = 0;
-            airVelocity = Vector3.zero;
 
             if (velocity.y < 0)
                 velocity.y = -2f;
         }
         else
-        {
             coyoteCounter -= Time.deltaTime;
-        }
     }
 
     private void HandleMovement()
@@ -218,14 +213,6 @@ public class ThirdPersonController : MonoBehaviour
         targetSpeed *= moveDirection.magnitude;
 
         currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
-
-        if (!IsGrounded)
-        {
-            // Add small influence to airVelocity from input, but do not overwrite
-            Vector3 inputInfluence = moveDirection * acceleration * Time.deltaTime;
-            airVelocity += inputInfluence;
-            airVelocity = Vector3.ClampMagnitude(airVelocity, sprintSpeed);
-        }
 
         if (jumpBufferCounter > 0)
         {
@@ -239,23 +226,30 @@ public class ThirdPersonController : MonoBehaviour
     private void Jump()
     {
         velocity.y = jumpForce;
+
         jumpBufferCounter = 0;
         coyoteCounter = 0;
+
         IsJumping = true;
     }
 
     private void AirJump()
     {
         velocity.y = jumpForce * 0.9f;
+
         airJumpCount++;
         jumpBufferCounter = 0;
+
         IsJumping = true;
     }
 
     private void HandleGravity()
     {
         if (isBurrowing || isDashing) return;
+
         velocity.y += gravity * Time.deltaTime;
+
+        IsFalling = velocity.y < -1f && !IsGrounded;
     }
 
     private void HandleBurrowMovement()
@@ -263,8 +257,11 @@ public class ThirdPersonController : MonoBehaviour
         if (!isBurrowing || currentBurrowCollider == null) return;
 
         Vector3 burrowMove = moveDirection * burrowSpeed * Time.deltaTime;
+
         Vector3 nextPos = transform.position + burrowMove;
+
         Vector3 closest = currentBurrowCollider.ClosestPoint(nextPos);
+
         Vector3 delta = closest - transform.position;
 
         controller.Move(delta);
@@ -275,8 +272,15 @@ public class ThirdPersonController : MonoBehaviour
         if (!visualCapsule) return;
 
         float targetY = isBurrowing ? originalVisualY - burrowSink : originalVisualY;
+
         Vector3 localPos = visualCapsule.localPosition;
-        localPos.y = Mathf.Lerp(localPos.y, targetY, Time.deltaTime * burrowVisualSpeed);
+
+        localPos.y = Mathf.Lerp(
+            localPos.y,
+            targetY,
+            Time.deltaTime * burrowVisualSpeed
+        );
+
         visualCapsule.localPosition = localPos;
     }
 
@@ -284,8 +288,11 @@ public class ThirdPersonController : MonoBehaviour
     {
         isBurrowing = true;
         readyToLaunch = false;
+
         velocity = Vector3.zero;
+
         yield return new WaitForSeconds(burrowTime);
+
         readyToLaunch = true;
     }
 
@@ -294,16 +301,17 @@ public class ThirdPersonController : MonoBehaviour
         isBurrowing = false;
         readyToLaunch = false;
 
-        // Preserve forward momentum
-        airVelocity = transform.forward * sprintSpeed;
         velocity.y = launchForce;
+
         IsJumping = true;
+
         currentBurrowCollider = null;
     }
 
     private void TryDash()
     {
         if (Time.time < lastDashTime + dashCooldown) return;
+
         StartCoroutine(DashRoutine());
     }
 
@@ -313,6 +321,7 @@ public class ThirdPersonController : MonoBehaviour
         lastDashTime = Time.time;
 
         Vector3 dashDir = moveDirection;
+
         if (dashDir.magnitude < 0.1f)
             dashDir = cameraPivot.forward;
 
@@ -320,10 +329,13 @@ public class ThirdPersonController : MonoBehaviour
         dashDir.Normalize();
 
         float timer = 0f;
+
         while (timer < dashDuration)
         {
             controller.Move(dashDir * dashSpeed * Time.deltaTime);
+
             timer += Time.deltaTime;
+
             yield return null;
         }
 
@@ -332,36 +344,10 @@ public class ThirdPersonController : MonoBehaviour
 
     private void ApplyMovement()
     {
-        Vector3 move;
+        if (isBurrowing || isDashing) return;
 
-        if (isBurrowing) return;
-
-        if (!IsGrounded)
-        {
-            // Preserve horizontal momentum
-            move = airVelocity + Vector3.up * velocity.y;
-            // Slowly decay horizontal momentum over time
-            airVelocity = Vector3.Lerp(airVelocity, Vector3.zero, Time.deltaTime * 0.2f);
-        }
-        else
-        {
-            move = moveDirection * currentSpeed + Vector3.up * velocity.y;
-            airVelocity = Vector3.zero;
-        }
+        Vector3 move = moveDirection * currentSpeed + Vector3.up * velocity.y;
 
         controller.Move(move * Time.deltaTime);
-    }
-
-    private void OnControllerColliderHit(ControllerColliderHit hit)
-    {
-        if (hit.collider.CompareTag("feathers"))
-        {
-            groundedOnFeathers = true;
-            currentBurrowCollider = hit.collider;
-        }
-        else if (currentBurrowCollider == hit.collider)
-        {
-            groundedOnFeathers = false;
-        }
     }
 }
